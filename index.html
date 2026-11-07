@@ -1,0 +1,1129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bay South Explorer</title>
+<meta name="description" content="Interactive map of Gardens by the Bay (Bay South) with attractions, dining, amenities and QR navigation codes.">
+<meta name="theme-color" content="#0b4f4a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Pinned versions. Consider adding SRI integrity hashes before production deployment. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" referrerpolicy="no-referrer" defer></script>
+<script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js" referrerpolicy="no-referrer" defer></script>
+<script src="images/credits.js" defer></script>
+<style>
+  :root {
+    --teal-900: #062f2c;
+    --teal-800: #0b4f4a;
+    --teal-600: #11776f;
+    --teal-100: #e3f2ef;
+    --ink: #10201f;
+    --muted: #5b6e6c;
+    --line: #dbe6e4;
+    --surface: #ffffff;
+    --bg: #f3f7f6;
+    /* Marker palette matched to bay-south-map.jpg */
+    --attr: #e5007d;  --attr-soft: #fde6f2;  --attr-text: #c4006b;   /* Attractions: magenta, numbered */
+    --dine: #f6c400;  --dine-soft: #fff6d1;  --dine-text: #7a5a00;   /* Dining: yellow, lettered */
+    --other: #f39200; --other-soft: #fff0dc; --other-text: #b05f00;  /* Others: orange, numbered */
+    --amen: #2e2346;  --amen-soft: #ecebf2;  --amen-text: #2e2346;   /* Visitor info: dark squares */
+    --mrt: #d71f3a;   --callout: #e0115f;
+    --radius: 18px;
+    --shadow: 0 10px 30px rgba(6, 47, 44, .14), 0 2px 6px rgba(6, 47, 44, .08);
+    --sidebar-w: 360px;
+    --drawer-w: 420px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid #7fd3c8; outline-offset: 2px; }
+
+  /* ---------- Layout (mobile first) ---------- */
+  .app {
+    height: 100dvh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidebar {
+    background: linear-gradient(160deg, var(--teal-900), var(--teal-800) 60%, #3b1f5e);
+    color: #fff;
+    padding: 12px 16px 12px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 20;
+    position: relative;
+    min-height: 0;
+    min-width: 0;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 36px; height: 36px; border-radius: 11px; flex: none;
+    background: linear-gradient(135deg, #c86bd8, #3cc3b1);
+    display: grid; place-items: center;
+  }
+  .brand h1 { font-size: 1.05rem; margin: 0; line-height: 1.15; letter-spacing: -.01em; }
+  .brand p { margin: 0; font-size: .78rem; opacity: .75; }
+  .list-toggle {
+    margin-left: auto; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.1);
+    color: #fff; border-radius: 999px; padding: 8px 14px; font-size: .82rem; font-weight: 600; cursor: pointer;
+    min-height: 36px;
+  }
+
+  .search {
+    position: relative;
+  }
+  .search svg { position: absolute; left: 14px; top: 50%; translate: 0 -50%; opacity: .6; pointer-events: none; }
+  .search input {
+    width: 100%; border: 0; border-radius: 14px; padding: 12px 40px 12px 42px;
+    background: #fff; color: var(--ink); font-size: .95rem; min-height: 46px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  }
+  .search input::placeholder { color: #8a9997; }
+  .search .clear {
+    position: absolute; right: 6px; top: 50%; translate: 0 -50%;
+    width: 34px; height: 34px; border-radius: 10px; border: 0; background: transparent; color: var(--muted);
+    cursor: pointer; display: none;
+  }
+  .search.has-value .clear { display: block; }
+
+  .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none; display: inline-flex; align-items: center; gap: 7px;
+    border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.08); color: #fff;
+    border-radius: 999px; padding: 8px 14px; font-size: .84rem; font-weight: 600; cursor: pointer;
+    min-height: 36px; transition: background .2s, color .2s, border-color .2s;
+  }
+  .chip .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c, #fff); box-shadow: 0 0 0 2px rgba(255,255,255,.6); }
+  .chip[aria-pressed="true"] { background: #fff; color: var(--teal-900); border-color: #fff; }
+  .chip .count { opacity: .6; font-weight: 500; }
+
+  .results {
+    display: none;
+    list-style: none; margin: 0; padding: 4px; overflow-y: auto;
+    background: #fff; color: var(--ink); border-radius: 14px; box-shadow: var(--shadow);
+    max-height: 46dvh;
+  }
+  .app.list-open .results { display: block; }
+  .results li + li { border-top: 1px solid var(--line); }
+  .result {
+    width: 100%; display: flex; align-items: center; gap: 12px; text-align: left;
+    padding: 10px 10px; border: 0; background: transparent; border-radius: 10px; cursor: pointer; min-height: 52px;
+  }
+  .result:hover, .result:focus-visible { background: var(--teal-100); }
+  .result .ico {
+    width: 34px; height: 34px; border-radius: 10px; flex: none; display: grid; place-items: center;
+    background: var(--c); color: var(--on); font-weight: 800; font-size: .8rem; border-radius: 50%;
+  }
+  .result .ico.sq { border-radius: 8px; font-size: .72rem; }
+  .result .ico svg { width: 18px; height: 18px; fill: currentColor; }
+  .result strong { display: block; font-size: .92rem; font-weight: 600; }
+  .result span.meta { display: block; font-size: .76rem; color: var(--muted); }
+  .empty { padding: 18px; text-align: center; color: var(--muted); font-size: .9rem; }
+
+  /* ---------- Map viewport ---------- */
+  .viewport {
+    position: relative; overflow: hidden; min-height: 0;
+    background: #4f2a6b;
+    container-type: size;
+    display: grid; place-items: center;
+    touch-action: none;
+    cursor: grab;
+  }
+  .viewport:active { cursor: grabbing; }
+  .canvas {
+    position: relative;
+    width: min(100cqw, 146.67cqh);
+    aspect-ratio: 2599 / 1772;
+    --inv: 1;
+  }
+  .canvas > svg, .canvas > img.map-img {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+    user-select: none; -webkit-user-drag: none; pointer-events: none;
+  }
+
+  .map-error { position:absolute; inset:0; display:grid; place-items:center; color:#fff; text-align:center; padding:24px; font-size:.95rem; }
+
+  /* ---------- Pins ---------- */
+  .pin {
+    position: absolute;
+    width: 36px; height: 36px;           /* ≥32px touch target */
+    padding: 0; border: 0; background: transparent; cursor: pointer;
+    --ty: -88%; --oy: 88%;
+    transform: translate(-50%, var(--ty)) scale(var(--inv));
+    transform-origin: 50% var(--oy);
+    transition: left .35s cubic-bezier(.2, 0, 0, 1), top .35s cubic-bezier(.2, 0, 0, 1), transform .2s cubic-bezier(.3,1.4,.5,1), opacity .2s;
+    z-index: 2;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pin .head {
+    position: absolute; left: 50%; top: 6px; width: 22px; height: 22px; margin-left: -11px;
+    background: var(--c); border: 0; border-radius: 50% 50% 50% 0;
+    rotate: -45deg; box-shadow: 0 4px 10px rgba(0,0,0,.28);
+    display: grid; place-items: center;
+  }
+  .pin .glyph {
+    rotate: 45deg; width: 15px; height: 15px; border-radius: 50%; background: #fff; color: var(--ct);
+    font-size: 9px; font-weight: 800; line-height: 1; display: grid; place-items: center; letter-spacing: -.02em;
+  }
+  /* Others: solid orange, white number */
+  .pin.filled .glyph { background: transparent; color: #fff; font-size: 10px; }
+  /* Visitor info: dark rounded square, white glyph (like the map's legend icons) */
+  .pin.square { --ty: -50%; --oy: 50%; }
+  .pin.square .head { rotate: 0deg; border-radius: 5px; width: 21px; height: 21px; margin-left: -10.5px; top: 7.5px; border: 1.5px solid #fff; }
+  .pin.square .glyph { rotate: 0deg; background: transparent; color: #fff; font-size: 10px; width: auto; height: auto; }
+  .pin.mrt .head { background: var(--mrt); }
+  .pin.mrt .glyph { font-size: 7.5px; letter-spacing: 0; }
+  /* Bayfront Plaza / Drop Off: the callout is already printed on the map, so the
+     pin is an invisible hotspot over it (scales with the map; min 32px on screen). */
+  .pin.callout, .pin.callout:hover, .pin.callout:focus-visible, .pin.callout.active {
+    width: max(calc(32px * var(--inv)), 2.9%); height: auto; aspect-ratio: 1;
+    transform: translate(-50%, -50%); border-radius: 50%;
+  }
+  .pin.callout .head, .pin.callout .tip { display: none; }
+  .pin.callout:hover, .pin.callout:focus-visible { box-shadow: 0 0 0 3px rgba(255,255,255,.9), 0 0 0 6px var(--callout); }
+  .pin.callout:focus-visible { outline: none; }
+  .pin.callout.active { box-shadow: 0 0 0 3px #fff, 0 0 0 7px var(--callout); }
+  .pin.callout.active::after { display: none; }
+  .pin .tip {
+    position: absolute; bottom: calc(100% + 2px); left: 50%; translate: -50% 4px;
+    white-space: nowrap; background: var(--teal-900); color: #fff; font-size: 12px; font-weight: 600;
+    padding: 5px 9px; border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity .15s, translate .15s;
+    box-shadow: 0 4px 12px rgba(0,0,0,.2);
+  }
+  .pin:hover, .pin:focus-visible { transform: translate(-50%, var(--ty)) scale(calc(var(--inv) * 1.18)); z-index: 5; }
+  .pin:hover .tip, .pin:focus-visible .tip { opacity: 1; translate: -50% 0; }
+  .pin.active { z-index: 6; transform: translate(-50%, var(--ty)) scale(calc(var(--inv) * 1.25)); }
+  .pin.active::after {
+    content: ""; position: absolute; left: 50%; bottom: 0; width: 18px; height: 8px; margin-left: -9px;
+    border-radius: 50%; background: var(--c); opacity: .5; animation: pulse 1.4s ease-out infinite;
+  }
+  .pin.is-hidden { display: none; }
+  .pin.dim { opacity: .3; }
+  @keyframes pulse { from { transform: scale(.6); opacity: .7; } to { transform: scale(3); opacity: 0; } }
+
+  /* ---------- Map controls & layers ---------- */
+  .layer-bar {
+    position: absolute; top: 14px; left: 50%; translate: -50% 0; z-index: 10;
+    display: flex; gap: 4px; padding: 4px;
+    background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(8px);
+    border-radius: 999px; box-shadow: var(--shadow);
+  }
+  .layer-btn {
+    border: 0; background: transparent; padding: 6px 14px; border-radius: 999px;
+    font-size: .8rem; font-weight: 700; color: var(--muted); cursor: pointer;
+    transition: background .2s, color .2s; white-space: nowrap;
+  }
+  .layer-btn:hover { color: var(--ink); }
+  .layer-btn[aria-pressed="true"] {
+    background: var(--teal-800); color: #fff;
+  }
+
+  .controls {
+    position: absolute; right: 14px; bottom: calc(14px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 8px; z-index: 10;
+  }
+  .ctrl {
+    width: 44px; height: 44px; border-radius: 14px; border: 0; background: #fff; color: var(--teal-800);
+    box-shadow: var(--shadow); cursor: pointer; display: grid; place-items: center; font-size: 1.3rem; font-weight: 700;
+  }
+  .ctrl:hover { background: var(--teal-100); }
+  .legend {
+    position: absolute; left: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 10;
+    background: rgba(255,255,255,.94); backdrop-filter: blur(6px); border-radius: 14px; padding: 10px 12px;
+    box-shadow: var(--shadow); font-size: .76rem; display: grid; gap: 6px;
+  }
+  .legend div { display: flex; align-items: center; gap: 8px; }
+  .legend i { width: 13px; height: 13px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px rgba(0,0,0,.12); }
+  .legend i.sq { border-radius: 3px; }
+
+  /* ---------- Detail drawer (native <dialog>) ---------- */
+  dialog.drawer {
+    padding: 0; border: 0; margin: 0; max-width: none; max-height: none;
+    position: fixed; inset: auto 0 0 0; width: 100%;
+    background: transparent; color: var(--ink);
+  }
+  dialog.drawer::backdrop { background: rgba(6, 30, 28, .35); backdrop-filter: blur(2px); }
+  .drawer-inner {
+    background: var(--surface); border-radius: 24px 24px 0 0; box-shadow: var(--shadow);
+    max-height: 88dvh; overflow-y: auto;
+    padding: 8px 20px calc(24px + env(safe-area-inset-bottom));
+    animation: sheet-up .32s cubic-bezier(.2,.9,.3,1);
+  }
+  .grabber { width: 44px; height: 5px; border-radius: 99px; background: var(--line); margin: 4px auto 10px; }
+  @keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes slide-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  .drawer-head { display: flex; align-items: flex-start; gap: 12px; }
+  .drawer-head h2 { margin: 6px 0 0; font-size: 1.4rem; line-height: 1.2; letter-spacing: -.02em; }
+  .close {
+    margin-left: auto; flex: none; width: 40px; height: 40px; border-radius: 12px; border: 0;
+    background: var(--bg); cursor: pointer; font-size: 1.1rem; color: var(--muted);
+  }
+  .close:hover { background: var(--line); color: var(--ink); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    background: var(--soft); color: var(--ct); font-size: .74rem; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+  }
+  .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+  .photo { margin: 14px 0 0; }
+  .photo-box {
+    position: relative; aspect-ratio: 16 / 10; border-radius: 16px; overflow: hidden;
+    background: linear-gradient(135deg, var(--soft), #fff);
+  }
+  .photo-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photo-ph { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 8px; color: var(--ct); }
+  .photo-ph svg { width: 48px; height: 48px; fill: currentColor; opacity: .55; }
+  .photo-ph b { font-size: 2.2rem; font-weight: 800; opacity: .55; }
+  .photo-ph span { font-size: .78rem; color: var(--muted); }
+  .photo figcaption { font-size: .7rem; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+  .photo figcaption a { color: inherit; }
+  .source-badge {
+    position: absolute; top: 10px; right: 10px; z-index: 2;
+    background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(6px);
+    padding: 4px 9px; border-radius: 8px; font-size: .72rem; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 6px rgba(0,0,0,.12);
+  }
+  .source-badge.google { color: #1a73e8; }
+  .source-badge.commons { color: var(--teal-800); }
+  .source-badge.map { color: var(--teal-900); }
+  .map-box[hidden] { display: none; }
+  .photo-box img[hidden], .photo-ph[hidden], .source-badge[hidden] { display: none; }
+
+  .map-section { margin-top: 16px; }
+  .map-box {
+    position: relative; border-radius: 16px; overflow: hidden;
+    border: 1px solid var(--line); aspect-ratio: 16 / 10; background: var(--bg);
+  }
+  .map-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .map-box .map-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .map-box iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .map-tag {
+    position: absolute; top: 10px; left: 10px; z-index: 2;
+    background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(4px);
+    color: var(--teal-900); font-size: .72rem; font-weight: 700;
+    padding: 4px 9px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,.1);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .map-coords {
+    position: absolute; bottom: 8px; left: 10px; z-index: 2;
+    background: rgba(0, 0, 0, 0.68); backdrop-filter: blur(4px);
+    color: #fff; font-size: .68rem; font-family: ui-monospace, monospace;
+    padding: 3px 8px; border-radius: 6px;
+  }
+  .map-toggle-btn { width: 100%; margin-top: 8px; }
+  .offline-note { font-size: .82rem; color: var(--muted); margin: 8px 0 0; text-align: center; }
+  .desc { color: #33302f; line-height: 1.6; font-size: .95rem; margin: 14px 0 6px; }
+  .hours { font-size: .84rem; color: var(--muted); margin: 0 0 16px; }
+
+  .qr-card {
+    display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center;
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 14px;
+    background: linear-gradient(180deg, #fff, var(--teal-100));
+  }
+  .qr {
+    width: 152px; height: 152px; padding: 8px; background: #fff; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08); display: grid; place-items: center;
+  }
+  .qr img, .qr canvas { width: 100% !important; height: auto !important; image-rendering: pixelated; }
+  .qr-fallback { font-size: .75rem; color: var(--muted); text-align: center; }
+  .qr-card p { margin: 0; font-size: .88rem; line-height: 1.5; color: var(--teal-900); font-weight: 500; }
+  .qr-card small { display: block; margin-top: 6px; color: var(--muted); font-weight: 400; }
+
+  .actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+  .btn {
+    flex: 1 1 auto; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 48px; padding: 0 18px; border-radius: 14px; font-weight: 700; font-size: .92rem;
+    text-decoration: none; cursor: pointer; border: 0;
+  }
+  .btn-primary { background: var(--teal-800); color: #fff; }
+  .btn-primary:hover { background: var(--teal-600); }
+  .btn-ghost { background: var(--bg); color: var(--teal-800); border: 1px solid var(--line); }
+  .btn-ghost:hover { background: var(--teal-100); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; translate: -50% 20px; opacity: 0; z-index: 100;
+    background: var(--teal-900); color: #fff; padding: 10px 16px; border-radius: 12px; font-size: .85rem;
+    transition: opacity .2s, translate .2s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; translate: -50% 0; }
+
+  /* ---------- Desktop ---------- */
+  @media (min-width: 900px) {
+    .app { grid-template-rows: minmax(0, 1fr); grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
+    .sidebar { padding: 22px 20px; gap: 14px; }
+    .brand h1 { font-size: 1.2rem; }
+    .list-toggle { display: none; }
+    .chips { flex-wrap: wrap; overflow: visible; }
+    .results, .app.list-open .results { display: block; flex: 1; max-height: none; }
+    dialog.drawer { inset: 0 0 0 auto; width: var(--drawer-w); height: 100dvh; }
+    .drawer-inner {
+      height: 100%; max-height: none; border-radius: 24px 0 0 24px; padding: 22px 24px 28px;
+      animation-name: slide-in;
+    }
+    .grabber { display: none; }
+    .qr { width: 168px; height: 168px; }
+  }
+  @media (max-width: 420px) {
+    .legend { display: none; }
+    .qr-card { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" aria-label="Find a location">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><path d="M12 2c-1 3-4 4-4 8a4 4 0 0 0 3 3.9V22h2v-8.1A4 4 0 0 0 16 10c0-4-3-5-4-8z"/></svg>
+      </div>
+      <div>
+        <h1>Gardens by the Bay</h1>
+        <p>Bay South · Interactive Map</p>
+      </div>
+      <button class="list-toggle" id="listToggle" aria-expanded="false" aria-controls="results">List</button>
+    </div>
+
+    <div class="search" id="searchWrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10201f" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="search" type="search" placeholder="Search attractions, food, toilets…" autocomplete="off" aria-label="Search locations" maxlength="60">
+      <button class="clear" id="clearSearch" aria-label="Clear search">✕</button>
+    </div>
+
+    <div class="chips" role="group" aria-label="Filter by category" id="chips"></div>
+
+    <ul class="results" id="results" aria-label="Locations"></ul>
+  </aside>
+
+  <main class="viewport" id="viewport" aria-label="Park map. Drag to pan, scroll or pinch to zoom.">
+    <div class="layer-bar" role="tablist" aria-label="Map style">
+      <button class="layer-btn" id="layerPark" data-layer="park" aria-pressed="true" type="button">Park Map</button>
+      <button class="layer-btn" id="layerSatellite" data-layer="satellite" aria-pressed="false" type="button">Google Satellite</button>
+      <button class="layer-btn" id="layerRoads" data-layer="roads" aria-pressed="false" type="button">Google Roads</button>
+    </div>
+
+    <div class="canvas" id="canvas">
+      <img class="map-img" id="mapImg" src="bay-south-map.jpg" alt="Gardens by the Bay, Bay South official park map" width="2599" height="1772" draggable="false">
+      <!-- Pins are injected here -->
+    </div>
+
+    <div class="legend" aria-hidden="true">
+      <div><i style="--c:var(--attr)"></i>Attractions</div>
+      <div><i style="--c:var(--dine)"></i>Dining</div>
+      <div><i style="--c:var(--other)"></i>Others</div>
+      <div><i class="sq" style="--c:var(--amen)"></i>Visitor info</div>
+    </div>
+    <div class="controls">
+      <button class="ctrl" id="zoomIn" aria-label="Zoom in">+</button>
+      <button class="ctrl" id="zoomOut" aria-label="Zoom out">−</button>
+      <button class="ctrl" id="zoomReset" aria-label="Reset view">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      </button>
+    </div>
+  </main>
+</div>
+
+<dialog class="drawer" id="detail" aria-labelledby="dTitle">
+  <div class="drawer-inner" id="drawerInner">
+    <div class="grabber" aria-hidden="true"></div>
+    <div class="drawer-head">
+      <div>
+        <span class="badge" id="dBadge"></span>
+        <h2 id="dTitle"></h2>
+      </div>
+      <button class="close" id="dClose" aria-label="Close details">✕</button>
+    </div>
+    <figure class="photo">
+      <div class="photo-box" id="dPhotoBox">
+        <img id="dImg" alt="" hidden>
+        <div class="photo-ph" id="dPh"></div>
+        <div class="source-badge" id="dSourceBadge" hidden></div>
+      </div>
+      <figcaption id="dCredit"></figcaption>
+    </figure>
+    <p class="desc" id="dDesc"></p>
+    <p class="hours" id="dHours"></p>
+
+    <div class="qr-card">
+      <div class="qr" id="dQr" role="img" aria-label="QR code linking to Google Maps"></div>
+      <p>Scan with your smartphone to navigate to this spot via Google Maps.
+        <small>Opens directions in the Google Maps app or your mobile browser.</small>
+      </p>
+    </div>
+
+    <div class="actions">
+      <a class="btn btn-primary" id="dMaps" href="#" target="_blank" rel="noopener noreferrer">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+        Open in Google Maps
+      </a>
+      <a class="btn btn-ghost" id="dSatellite" href="#" target="_blank" rel="noopener noreferrer" title="Explore this location in Google Maps satellite view; 3D controls depend on availability">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+        Satellite &amp; 3D
+      </a>
+      <a class="btn btn-ghost" id="dGooglePhotos" href="#" target="_blank" rel="noopener noreferrer" title="View place photos and user reviews on Google Maps">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        Photos &amp; reviews
+      </a>
+      <button class="btn btn-ghost" id="dDownload" type="button">Save QR</button>
+      <button class="btn btn-ghost" id="dShare" type="button">Copy link</button>
+    </div>
+
+    <section class="map-section" aria-label="Google Map">
+      <div class="map-box" id="dMapBox">
+        <img id="dOfflineMap" alt="Offline Google Map" loading="lazy">
+        <span class="map-tag" id="dMapTag">📍 Offline Google Map</span>
+        <span class="map-coords" id="dMapCoords"></span>
+        <div class="map-frame" id="dMapFrame" hidden></div>
+      </div>
+      <button class="btn btn-ghost map-toggle-btn" id="dMapToggle" type="button" aria-expanded="false">Switch to live interactive map</button>
+      <p class="offline-note" id="dOffline" hidden>The live interactive map needs an internet connection.</p>
+    </section>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* ============================================================
+   * CONFIG
+   * Map: official Bay South map (bay-south-map.jpg, 2599×1772).
+   * coords = percentage of image width (x) / height (y), placed on
+   * the tip of each numbered/lettered marker printed on the map.
+   * ============================================================ */
+  // marker: "ring" = white centre + coloured key, "filled" = solid with white key, "square" = info icon
+  const CATEGORIES = {
+    Attractions: { color: "var(--attr)",  soft: "var(--attr-soft)",  text: "var(--attr-text)",  on: "#fff",    marker: "ring" },
+    Dining:      { color: "var(--dine)",  soft: "var(--dine-soft)",  text: "var(--dine-text)",  on: "#3d2e00", marker: "ring" },
+    Others:      { color: "var(--other)", soft: "var(--other-soft)", text: "var(--other-text)", on: "#fff",    marker: "filled" },
+    Amenities:   { color: "var(--amen)",  soft: "var(--amen-soft)",  text: "var(--amen-text)",  on: "#fff",    marker: "square" }
+  };
+  const CALLOUTS = { "bayfront-plaza": "Bayfront Plaza", "drop-off": "Drop Off" };
+
+  const mapsUrl = (q) => "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
+  const satelliteMapUrl = (lat, lng) =>
+    `https://www.google.com/maps/@?api=1&map_action=map&center=${lat},${lng}&zoom=20&basemap=satellite`;
+  const GBTB = ", Gardens by the Bay, Singapore";
+
+  // [id, title, category, mapKey, x%, y%, description, mapsQuery?, glyph?]
+  const RAW = [
+    // ---- Attractions (numbered pink markers) ----
+    ["golden-garden", "Golden Garden", "Attractions", "1", 62.7, 35.7, "A sun-drenched garden of golden-hued foliage and flowers framing the golden Supertrees."],
+    ["the-canopy", "The Canopy", "Attractions", "2", 61.0, 27.1, "A sheltered event and gathering space beside the Conservatories, shaded by a sweeping roof canopy."],
+    ["flower-dome", "Flower Dome", "Attractions", "3", 55.5, 16.5, "The largest glass greenhouse in the world, showcasing exotic plants and changing floral displays in a cool, dry climate."],
+    ["cloud-forest", "Cloud Forest", "Attractions", "4", 67.2, 22.4, "A misty greenhouse featuring a 35-metre-tall mountain covered in lush vegetation and a dramatic indoor waterfall."],
+    ["floral-clock", "Floral Clock", "Attractions", "5", 56.7, 29.4, "A working clock made of living plants, set in the plaza between the Conservatories and the Supertree Grove."],
+    ["supertree-grove", "Supertree Grove", "Attractions", "6", 45.7, 40.9, "Iconic vertical gardens that come alive with light and sound during the nightly Garden Rhapsody show."],
+    ["ocbc-skyway", "OCBC Skyway", "Attractions", "7", 40.5, 37.9, "An elevated walkway suspended between the Supertrees with panoramic views of the Gardens and city skyline."],
+    ["supertree-observatory", "Supertree Observatory", "Attractions", "8", 45.1, 30.8, "An observation deck and open-air rooftop at the top of the tallest Supertree."],
+    ["discovery", "Discovery", "Attractions", "9", 37.8, 55.4, "World of Plants: traces the history of plant life on Earth through ancient and living species."],
+    ["web-of-life", "Web of Life", "Attractions", "10", 42.9, 51.2, "World of Plants: animal-shaped topiaries highlight how plants and animals depend on each other."],
+    ["fruits-and-flowers", "Fruits and Flowers", "Attractions", "11", 47.7, 56.2, "World of Plants: tropical fruit trees and flowering plants, from durians to bananas."],
+    ["understorey", "Understorey", "Attractions", "12", 53.9, 49.4, "World of Plants: the shady, humid layer beneath the rainforest canopy and the plants that thrive there."],
+    ["world-of-palms", "World of Palms", "Attractions", "13", 56.3, 47.0, "World of Plants: a collection of palms showing their many uses in everyday life."],
+    ["secret-life-of-trees", "Secret Life of Trees", "Attractions", "14", 56.9, 40.5, "World of Plants: discover how trees grow, communicate and support life around them."],
+    ["indian-garden", "Indian Garden", "Attractions", "15", 53.1, 28.5, "Heritage Gardens: plants tied to Indian culture, laid out in a traditional floral motif."],
+    ["chinese-garden", "Chinese Garden", "Attractions", "16", 41.2, 29.3, "Heritage Gardens: plants of significance in Chinese culture, with a striking red moon-gate sculpture."],
+    ["malay-garden", "Malay Garden", "Attractions", "17", 36.9, 33.3, "Heritage Gardens: a traditional kampung house surrounded by plants used in Malay daily life."],
+    ["colonial-garden", "Colonial Garden", "Attractions", "18", 35.6, 43.1, "Heritage Gardens: the cash crops — spices, rubber and more — that shaped Singapore's colonial history."],
+    ["planet", "Planet", "Attractions", "19", 28.0, 48.0, "Marc Quinn's monumental sculpture of a sleeping baby that appears to float above the lawn."],
+    ["the-meadow", "The Meadow", "Attractions", "20", 27.7, 59.1, "A vast open lawn that hosts outdoor concerts, festivals and community events."],
+    ["serene-garden", "Serene Garden", "Attractions", "21", 14.4, 62.4, "A tranquil, Japanese-inspired garden with bamboo, stone paths and quiet water features."],
+    ["sun-pavilion", "Sun Pavilion", "Attractions", "22", 69.0, 36.6, "A desert landscape of more than 1,000 cacti and succulents."],
+    ["childrens-garden", "Far East Organization Children's Garden", "Attractions", "23", 77.1, 40.3, "Water play, treehouses and adventure trails designed for kids to explore."],
+    ["the-canyon", "The Canyon", "Attractions", "24", 71.4, 30.5, "A rock garden of sculptural boulders and stone artworks beside the Cloud Forest."],
+    ["silver-garden", "Silver Garden", "Attractions", "25", 45.1, 19.9, "Silver-toned foliage around a cluster of Supertrees near Dragonfly Lake."],
+    ["floral-fantasy", "Floral Fantasy", "Attractions", "26", 18.6, 41.5, "An immersive indoor garden of floral sculptures, hanging blooms and a 4D ride."],
+    ["active-garden", "Active Garden and PropNex Family Zone", "Attractions", "27", 32.2, 16.2, "Play areas, fitness corners and family-friendly spaces along the waterfront."],
+    ["kingfisher-wetlands", "Kingfisher Wetlands", "Attractions", "28", 80.5, 47.9, "Wetland habitats around Kingfisher Lake, rich in birdlife, dragonflies and aquatic plants."],
+
+    // ---- Dining (lettered yellow markers) ----
+    ["starbucks-plaza", "Starbucks (Supertree Grove)", "Dining", "a", 58.5, 37.6, "Coffee and light bites near Golden Garden and the Supertree Grove.", "Starbucks Gardens by the Bay Singapore"],
+    ["mcdonalds", "McDonald's", "Dining", "b", 59.6, 37.6, "Fast-food favourites close to the Main Entrance and Drop Off.", "McDonald's Gardens by the Bay Singapore"],
+    ["conservatory-cafe", "Conservatory Café", "Dining", "c", 60.6, 25.5, "Casual café beside the Conservatories, ideal for a break between the domes."],
+    ["tunglok-douraku", "TungLok Seafood / Douraku Sushi", "Dining", "d", 60.1, 22.0, "Chinese seafood and Japanese sushi near the Flower Dome.", "TungLok Seafood Gardens by the Bay"],
+    ["marguerite-hortus", "Marguerite / Hortus", "Dining", "e", 50.4, 17.9, "Fine-dining and Mediterranean restaurants inside the Flower Dome.", "Marguerite Flower Dome Gardens by the Bay"],
+    ["finnwood", "Finnwood", "Dining", "f", 73.0, 36.6, "Dining spot near Sun Pavilion and the Children's Garden."],
+    ["satay-by-the-bay", "Satay by the Bay", "Dining", "g", 86.9, 47.2, "Open-air hawker centre serving satay, seafood and local favourites by the water.", "Satay by the Bay, Singapore"],
+    ["starbucks-waterfront", "Starbucks (Active Garden)", "Dining", "h", 32.5, 12.5, "Coffee by the Waterfront Promenade, near the Active Garden.", "Starbucks Gardens by the Bay Waterfront Singapore"],
+    ["janice-wong", "Janice Wong", "Dining", "i", 44.2, 30.2, "Dessert and pastry creations near the Supertree Observatory.", "Janice Wong Gardens by the Bay"],
+    ["shake-shack", "Shake Shack", "Dining", "j", 59.5, 25.4, "Burgers, crinkle-cut fries and frozen custard by the Conservatories.", "Shake Shack Gardens by the Bay Singapore"],
+    ["hopscotch", "Hopscotch", "Dining", "k", 18.7, 44.4, "Cocktail bar and kitchen next to Floral Fantasy at Bayfront Plaza.", "Hopscotch Gardens by the Bay"],
+    ["jurassic-nest", "Jurassic Nest Food Hall", "Dining", "l", 49.1, 48.3, "Food hall with local and international stalls beside the Supertree Grove.", "Jurassic Nest Gardens by the Bay"],
+
+    // ---- Others (numbered orange markers: event & function venues) ----
+    ["calabash-room", "Calabash Room", "Others", "29", 51.5, 46.7, "Event and function venue beside the Supertree Grove."],
+    ["cannonball-room", "Cannonball Room", "Others", "30", 50.7, 47.8, "Event and function venue beside the Supertree Grove."],
+    ["colonnade", "Colonnade", "Others", "31", 53.3, 40.7, "Covered event space next to the Supertree Grove."],
+    ["friends-centre", "Friends of the Gardens Centre", "Others", "32", 61.2, 29.2, "Membership and visitor centre for the Friends of the Gardens programme."],
+    ["bayfront-pavilion", "Bayfront Pavilion", "Others", "33", 15.5, 44.4, "Event pavilion at Bayfront Plaza near the SG50 Lattice."],
+    ["ficus-room", "Ficus Room", "Others", "34", 34.2, 14.3, "Function room near the Active Garden on the Waterfront Promenade."],
+    ["west-lawn", "West Lawn", "Others", "35", 31.0, 19.7, "Open lawn for outdoor events, near the shuttle stop and Dragonfly Lake."],
+    ["garden-pod", "Garden Pod", "Others", "36", 22.5, 68.2, "Event space by The Meadow."],
+    ["imba-theatre", "IMBA Theatre", "Others", "37", 31.5, 26.6, "Theatre venue near the Dragonfly Bridge and Bayfront Plaza."],
+
+    // ---- Amenities ----
+    ["visitor-services", "Visitor Services (Info · Ticketing · First Aid)", "Amenities", null, 58.4, 27.6, "Information counter, ticketing, first aid, nursing room and toilets at the Conservatories plaza.", "Gardens by the Bay Visitor Services Conservatories", "i"],
+    ["bayfront-plaza", "Bayfront Plaza", "Amenities", null, 23.78, 32.84, "Main entry from Bayfront MRT and Marina Bay Sands, with ticketing and information.", "Bayfront Plaza Gardens by the Bay", "i"],
+    ["drop-off", "Drop Off & Taxi Stand", "Amenities", null, 62.22, 41.37, "Main drop-off and taxi point next to the Coach Bay and Main Entrance.", "Gardens by the Bay Drop Off Point", "⇢"],
+    ["main-entrance", "Main Entrance", "Amenities", null, 63.1, 55.5, "Main vehicle entrance off Marina Gardens Drive, with car park and bus stop.", "Gardens by the Bay Main Entrance 18 Marina Gardens Drive", "⇥"],
+    ["bayfront-mrt", "Bayfront MRT", "Amenities", null, 20.3, 34.0, "MRT station linked to Bayfront Plaza via an underground walkway.", "Bayfront MRT Station Exit B", "MRT"],
+    ["gbtb-mrt", "Gardens by the Bay MRT", "Amenities", null, 91.2, 63.9, "Thomson–East Coast Line station near Satay by the Bay.", "Gardens by the Bay MRT Station", "MRT"],
+    ["parking-main", "Car Park (Main Entrance)", "Amenities", null, 59.6, 52.6, "Visitor parking closest to the Conservatories and Drop Off.", "Gardens by the Bay Car Park Marina Gardens Drive", "P"],
+    ["parking-bayfront", "Car Park (Bayfront Plaza)", "Amenities", null, 11.9, 53.6, "Visitor parking near The Meadow and Bayfront Plaza.", "Gardens by the Bay Bayfront Plaza car park", "P"],
+    ["parking-satay", "Car Park (Satay by the Bay)", "Amenities", null, 86.7, 61.2, "Parking for Satay by the Bay and the Children's Garden.", "Satay by the Bay car park", "P"],
+    ["toilets-grove", "Toilets · Supertree Grove", "Amenities", null, 48.7, 42.6, "Toilets and accessible toilets beside the Supertree Grove.", "Supertree Grove toilets Gardens by the Bay", "WC"],
+    ["toilets-meadow", "Toilets · The Meadow", "Amenities", null, 24.3, 66.0, "Toilets and accessible toilets near The Meadow.", "The Meadow Gardens by the Bay", "WC"],
+    ["toilets-active", "Toilets · Active Garden", "Amenities", null, 35.4, 15.8, "Toilets and accessible toilets along the Waterfront Promenade.", "Active Garden Gardens by the Bay", "WC"],
+    ["shuttle-bayfront", "Shuttle Stop · Bayfront Plaza", "Amenities", null, 24.8, 39.6, "Gardens shuttle between Bayfront Plaza and the Conservatories.", "Gardens by the Bay shuttle Bayfront Plaza", "⇄"]
+  ];
+
+  // Positions on google-roadmap.jpg / google-hybrid-map.jpg (3072x2560), located from the
+  // roadmap's own place labels; lat/lng derived from those pixels. [lat, lng, x%, y%]
+  const GOOGLE_DATA = {
+    "golden-garden": [1.28248, 103.86577, 56.18, 50.51],
+    "the-canopy": [1.28363, 103.86549, 54.52, 42.11],
+    "flower-dome": [1.28464, 103.86469, 49.64, 34.77],
+    "cloud-forest": [1.2839, 103.86606, 57.94, 40.16],
+    "floral-clock": [1.28348, 103.86498, 51.4, 43.2],
+    "supertree-grove": [1.28201, 103.8639, 44.89, 53.91],
+    "ocbc-skyway": [1.28247, 103.86416, 46.45, 50.55],
+    "supertree-observatory": [1.28213, 103.86376, 44.01, 53.01],
+    "discovery": [1.28023, 103.86325, 40.92, 66.88],
+    "web-of-life": [1.28041, 103.86375, 43.95, 65.59],
+    "fruits-and-flowers": [1.28056, 103.8643, 47.27, 64.45],
+    "understorey": [1.28159, 103.86494, 51.2, 56.95],
+    "world-of-palms": [1.28181, 103.86496, 51.27, 55.35],
+    "secret-life-of-trees": [1.28263, 103.86489, 50.85, 49.38],
+    "indian-garden": [1.28325, 103.86439, 47.85, 44.84],
+    "chinese-garden": [1.28308, 103.86352, 42.55, 46.13],
+    "malay-garden": [1.28253, 103.86294, 39.06, 50.16],
+    "colonial-garden": [1.28136, 103.86286, 38.54, 58.67],
+    "planet": [1.28092, 103.86224, 34.77, 61.88],
+    "the-meadow": [1.27951, 103.86225, 34.86, 72.15],
+    "serene-garden": [1.27851, 103.86086, 26.43, 79.38],
+    "sun-pavilion": [1.28306, 103.86662, 61.36, 46.29],
+    "childrens-garden": [1.28339, 103.86697, 63.48, 43.87],
+    "the-canyon": [1.28375, 103.86658, 61.1, 41.25],
+    "silver-garden": [1.28439, 103.8635, 42.42, 36.6],
+    "floral-fantasy": [1.28182, 103.86118, 28.35, 55.31],
+    "active-garden": [1.28563, 103.86216, 34.31, 27.58],
+    "kingfisher-wetlands": [1.28208, 103.86773, 68.13, 53.4],
+    "starbucks-plaza": [1.28273, 103.8653, 53.39, 48.63],
+    "mcdonalds": [1.28287, 103.86541, 54.04, 47.66],
+    "conservatory-cafe": [1.28373, 103.86543, 54.13, 41.37],
+    "tunglok-douraku": [1.28445, 103.86536, 53.71, 36.17],
+    "marguerite-hortus": [1.28491, 103.86418, 46.58, 32.77],
+    "finnwood": [1.28363, 103.86703, 63.83, 42.11],
+    "satay-by-the-bay": [1.28239, 103.8686, 73.4, 51.17],
+    "starbucks-waterfront": [1.28578, 103.86207, 33.79, 26.48],
+    "janice-wong": [1.28225, 103.86365, 43.36, 52.15],
+    "shake-shack": [1.28375, 103.86529, 53.32, 41.25],
+    "hopscotch": [1.28145, 103.8615, 30.31, 57.97],
+    "jurassic-nest": [1.28113, 103.8643, 47.27, 60.35],
+    "calabash-room": [1.28159, 103.86442, 48.01, 56.95],
+    "cannonball-room": [1.28157, 103.86431, 47.36, 57.15],
+    "colonnade": [1.28249, 103.86451, 48.57, 50.43],
+    "friends-centre": [1.28341, 103.86553, 54.79, 43.71],
+    "bayfront-pavilion": [1.2811, 103.86111, 27.93, 60.55],
+    "ficus-room": [1.28547, 103.86229, 35.12, 28.71],
+    "west-lawn": [1.28401, 103.86212, 34.08, 39.38],
+    "garden-pod": [1.27833, 103.86147, 30.14, 80.74],
+    "imba-theatre": [1.28322, 103.86186, 32.49, 45.08],
+    "visitor-services": [1.28373, 103.86552, 54.69, 41.41],
+    "bayfront-plaza": [1.28083, 103.86083, 26.24, 62.5],
+    "drop-off": [1.28198, 103.86595, 57.29, 54.1],
+    "main-entrance": [1.28062, 103.86606, 57.94, 64.06],
+    "bayfront-mrt": [1.28188, 103.85892, 14.65, 54.84],
+    "gbtb-mrt": [1.27974, 103.86798, 69.63, 70.43],
+    "parking-main": [1.28164, 103.86628, 59.31, 56.6],
+    "parking-bayfront": [1.27974, 103.86063, 25.03, 70.43],
+    "parking-satay": [1.28178, 103.86845, 72.49, 55.59],
+    "toilets-grove": [1.28275, 103.86333, 41.41, 48.55],
+    "toilets-meadow": [1.27849, 103.86176, 31.87, 79.57],
+    "toilets-active": [1.28521, 103.86245, 36.07, 30.59],
+    "shuttle-bayfront": [1.28138, 103.86128, 28.97, 58.48]
+  };
+
+  const locations = RAW.map(([id, title, category, mapKey, x, y, description, query, glyph]) => {
+    const g = GOOGLE_DATA[id] || [1.282, 103.864, x, y];
+    return {
+      id, title, category, mapKey, description, glyph,
+      coords: { x, y },
+      googleCoords: { x: g[2], y: g[3] },
+      lat: g[0], lng: g[1],
+      query: query || title + GBTB,
+      mapsUrl: mapsUrl(query || title + GBTB)
+    };
+  });
+
+  /* ============================================================ */
+  const $ = (s) => document.querySelector(s);
+  const app = $("#app"), viewport = $("#viewport"), canvas = $("#canvas");
+  const resultsEl = $("#results"), chipsEl = $("#chips"), searchEl = $("#search");
+  const dialog = $("#detail");
+  const byId = new Map(locations.map((l) => [l.id, l]));
+  const pinEls = new Map();
+  const state = { filter: "All", query: "", activeId: null, layer: "park" };
+  let pz = null;
+
+  /* ---------- Map layer switching ---------- */
+  function setLayer(layer) {
+    if (state.layer === layer) return;
+    state.layer = layer;
+    const mapImg = $("#mapImg");
+    document.querySelectorAll(".layer-btn").forEach((btn) => {
+      btn.setAttribute("aria-pressed", String(btn.dataset.layer === layer));
+    });
+    if (layer === "park") {
+      mapImg.src = "bay-south-map.jpg";
+      mapImg.alt = "Gardens by the Bay, Bay South official park map";
+      canvas.style.aspectRatio = "2599 / 1772";
+      canvas.style.width = "min(100cqw, 146.67cqh)";
+    } else if (layer === "satellite") {
+      mapImg.src = "google-hybrid-map.jpg";
+      mapImg.alt = "Gardens by the Bay Google Satellite & Hybrid imagery";
+      canvas.style.aspectRatio = "3072 / 2560";
+      canvas.style.width = "min(100cqw, 120cqh)";
+    } else if (layer === "roads") {
+      mapImg.src = "google-roadmap.jpg";
+      mapImg.alt = "Gardens by the Bay Google Roadmap";
+      canvas.style.aspectRatio = "3072 / 2560";
+      canvas.style.width = "min(100cqw, 120cqh)";
+    }
+    pinEls.forEach((pin, id) => {
+      const loc = byId.get(id);
+      if (!loc) return;
+      const c = (layer === "park") ? loc.coords : loc.googleCoords;
+      pin.style.left = c.x + "%";
+      pin.style.top = c.y + "%";
+    });
+    if (pz) pz.reset({ animate: true });
+  }
+
+  const glyphFor = (loc) => {
+    const span = document.createElement("span");
+    span.className = "glyph";
+    span.textContent = CALLOUTS[loc.id] || loc.mapKey || loc.glyph || "i";
+    return span;
+  };
+  const catVars = (el, cat) => {
+    el.style.setProperty("--c", CATEGORIES[cat].color);
+    el.style.setProperty("--soft", CATEGORIES[cat].soft);
+    el.style.setProperty("--ct", CATEGORIES[cat].text);
+    el.style.setProperty("--on", CATEGORIES[cat].on);
+  };
+
+  /* ---------- Map image ---------- */
+  $("#mapImg").addEventListener("error", () => {
+    const msg = document.createElement("div");
+    msg.className = "map-error";
+    msg.textContent = "Map image not found. Place bay-south-map.jpg next to index.html.";
+    canvas.append(msg);
+  });
+
+  /* ---------- Pins ---------- */
+  function renderPins() {
+    const frag = document.createDocumentFragment();
+    for (const loc of locations) {
+      const b = document.createElement("button");
+      b.type = "button";
+      const shape = CALLOUTS[loc.id] ? "callout" : CATEGORIES[loc.category].marker;
+      b.className = `pin panzoom-exclude ${shape}` + (loc.glyph === "MRT" ? " mrt" : "");
+      b.style.left = loc.coords.x + "%";
+      b.style.top = loc.coords.y + "%";
+      b.setAttribute("aria-label", `${loc.title} (${loc.category})`);
+      catVars(b, loc.category);
+      const head = document.createElement("span");
+      head.className = "head";
+      head.append(glyphFor(loc));
+      const tip = document.createElement("span");
+      tip.className = "tip"; tip.textContent = loc.title;
+      b.append(head, tip);
+      b.addEventListener("click", (e) => { e.stopPropagation(); openDetail(loc.id, { focus: false }); });
+      pinEls.set(loc.id, b);
+      frag.append(b);
+    }
+    canvas.append(frag);
+  }
+
+  /* ---------- Filters & search ---------- */
+  const matches = (loc) => {
+    if (state.filter !== "All" && loc.category !== state.filter) return false;
+    if (!state.query) return true;
+    const hay = `${loc.title} ${loc.category} ${loc.mapKey ? "#" + loc.mapKey : ""} ${loc.description} ${loc.glyph === "WC" ? "toilet restroom" : ""}`.toLowerCase();
+    return state.query.split(/\s+/).every((t) => hay.includes(t));
+  };
+
+  function renderChips() {
+    const counts = { All: locations.length };
+    locations.forEach((l) => (counts[l.category] = (counts[l.category] || 0) + 1));
+    chipsEl.replaceChildren(...["All", ...Object.keys(CATEGORIES)].map((cat) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.dataset.cat = cat;
+      b.setAttribute("aria-pressed", String(state.filter === cat));
+      if (cat !== "All") { const d = document.createElement("span"); d.className = "dot"; b.append(d); catVars(b, cat); }
+      const label = document.createElement("span"); label.textContent = cat;
+      const count = document.createElement("span"); count.className = "count"; count.textContent = counts[cat];
+      b.append(label, count);
+      b.addEventListener("click", () => { state.filter = cat; update(); });
+      return b;
+    }));
+  }
+
+  function renderList(list) {
+    if (!list.length) {
+      const li = document.createElement("li"); li.className = "empty";
+      li.textContent = "No places match your search.";
+      resultsEl.replaceChildren(li); return;
+    }
+    resultsEl.replaceChildren(...list.map((loc) => {
+      const li = document.createElement("li");
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "result"; catVars(b, loc.category);
+      const ico = document.createElement("span"); ico.className = "ico";
+      if (CATEGORIES[loc.category].marker === "square") ico.classList.add("sq");
+      if (loc.glyph === "MRT") ico.style.background = "var(--mrt)";
+      ico.textContent = loc.mapKey || loc.glyph || "i";
+      const txt = document.createElement("span");
+      const t = document.createElement("strong"); t.textContent = loc.title;
+      const m = document.createElement("span"); m.className = "meta"; m.textContent = loc.mapKey ? `${loc.category} · ${loc.mapKey}` : loc.category;
+      txt.append(t, m);
+      b.append(ico, txt);
+      b.addEventListener("click", () => openDetail(loc.id, { focus: true }));
+      li.append(b);
+      return li;
+    }));
+  }
+
+  function update() {
+    const list = locations.filter(matches);
+    const visible = new Set(list.map((l) => l.id));
+    pinEls.forEach((el, id) => el.classList.toggle("is-hidden", !visible.has(id)));
+    chipsEl.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.cat === state.filter)));
+    $("#listToggle").textContent = `List (${list.length})`;
+    renderList(list);
+    return list;
+  }
+
+  /* ---------- Pan / zoom ---------- */
+  function initPanzoom() {
+    if (typeof window.Panzoom !== "function") {
+      console.warn("Panzoom failed to load; map will be static.");
+      ["#zoomIn", "#zoomOut", "#zoomReset"].forEach((s) => ($(s).hidden = true));
+      return;
+    }
+    pz = window.Panzoom(canvas, {
+      maxScale: 6, minScale: 0.8, step: 0.35, canvas: true,
+      excludeClass: "panzoom-exclude", cursor: "", animate: true, duration: 350
+    });
+    viewport.addEventListener("wheel", (e) => { e.preventDefault(); pz.zoomWithWheel(e); }, { passive: false });
+    canvas.addEventListener("panzoomchange", (e) => canvas.style.setProperty("--inv", (1 / e.detail.scale).toFixed(4)));
+    $("#zoomIn").addEventListener("click", () => pz.zoomIn());
+    $("#zoomOut").addEventListener("click", () => pz.zoomOut());
+    $("#zoomReset").addEventListener("click", () => pz.reset());
+    // Narrow portrait screens: start slightly zoomed so pins are readable.
+    if (viewport.clientWidth < 600) pz.zoom(1.5, { animate: false });
+  }
+
+  function focusOn(loc) {
+    if (!pz) return;
+    const w = canvas.offsetWidth, h = canvas.offsetHeight;
+    const scale = Math.max(pz.getScale(), 2.2);
+    // Shift the target so it stays visible beside / above the drawer.
+    let dx = 0, dy = 0;
+    const r = $("#drawerInner").getBoundingClientRect();
+    if (window.matchMedia("(min-width: 900px)").matches) dx = -r.width / 2;
+    else dy = -Math.min(r.height, viewport.clientHeight * 0.6) / 2;
+    const c = (state.layer === "park") ? loc.coords : loc.googleCoords;
+    pz.zoom(scale, { animate: true });
+    requestAnimationFrame(() =>
+      pz.pan(w / 2 - (c.x / 100) * w + dx / scale,
+             h / 2 - (c.y / 100) * h + dy / scale, { animate: true }));
+  }
+
+  /* ---------- Detail drawer + QR ---------- */
+  function renderQr(url) {
+    const box = $("#dQr");
+    box.replaceChildren();
+    if (typeof window.QRCode !== "function") {
+      const p = document.createElement("p"); p.className = "qr-fallback";
+      p.textContent = "QR library unavailable. Use the button below.";
+      box.append(p); return;
+    }
+    new window.QRCode(box, {
+      text: url, width: 320, height: 320,
+      colorDark: "#062f2c", colorLight: "#ffffff",
+      correctLevel: window.QRCode.CorrectLevel.M
+    });
+    box.removeAttribute("title");
+  }
+
+  /* ---------- Photo (Google Maps & Wikimedia Commons) ---------- */
+  const safeHttps = (u) => (typeof u === "string" && /^https:\/\//.test(u) ? u : null);
+  function renderPhoto(loc) {
+    const img = $("#dImg"), ph = $("#dPh"), cap = $("#dCredit"), badge = $("#dSourceBadge");
+    const credit = (window.PHOTO_CREDITS || {})[loc.id];
+    catVars($("#dPhotoBox"), loc.category);
+    cap.replaceChildren();
+    badge.hidden = true; badge.className = "source-badge";
+
+    const showPlaceholder = () => {
+      mapInPhotoSlot = false;
+      syncLowerMap();
+      img.hidden = true; img.removeAttribute("src");
+      badge.hidden = true;
+      ph.hidden = false;
+      ph.replaceChildren();
+      const b = document.createElement("b"); b.textContent = loc.mapKey || loc.glyph || "i"; ph.append(b);
+      const note = document.createElement("span"); note.textContent = "No photo available";
+      ph.append(note);
+      cap.replaceChildren();
+    };
+    // No photo: show the offline map of the spot in the photo slot instead.
+    const showOfflineMap = () => {
+      mapInPhotoSlot = true;
+      syncLowerMap();
+      cap.replaceChildren("No photo available · offline map of the area");
+      badge.textContent = "📍 Offline Map";
+      badge.className = "source-badge map";
+      badge.hidden = false;
+      img.onerror = showPlaceholder;            // no map image either
+      img.onload = () => { ph.hidden = true; img.hidden = false; };
+      img.alt = `Offline map centred on ${loc.title}`;
+      img.src = `images/maps/${loc.id}.jpg`;
+    };
+    mapInPhotoSlot = false;
+    if (!credit || !/^images\/[a-z0-9-]+\.jpg$/.test(credit.file || "")) return showOfflineMap();
+
+    img.onerror = showOfflineMap;
+    img.onload = () => { ph.hidden = true; img.hidden = false; };
+    img.alt = `Photo of ${loc.title}`;
+    img.src = credit.file;
+
+    if (credit.isGoogle) {
+      badge.textContent = "Google Maps Photo";
+      badge.classList.add("google");
+      badge.hidden = false;
+      cap.append("Photo from Google Maps (Community Contributor) · ");
+      const link = document.createElement("a");
+      link.textContent = "View on Google Maps";
+      link.href = loc.mapsUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      cap.append(link);
+    } else {
+      badge.textContent = "Commons Photo";
+      badge.classList.add("commons");
+      badge.hidden = false;
+      cap.append("Photo: " + (credit.author || "Unknown author") + " · ");
+      const lic = document.createElement(safeHttps(credit.licenseUrl) ? "a" : "span");
+      lic.textContent = credit.license || "See source";
+      if (lic.tagName === "A") { lic.href = credit.licenseUrl; lic.target = "_blank"; lic.rel = "noopener noreferrer license"; }
+      cap.append(lic, " · ");
+      const src = document.createElement(safeHttps(credit.source) ? "a" : "span");
+      src.textContent = "Wikimedia Commons";
+      if (src.tagName === "A") { src.href = credit.source; src.target = "_blank"; src.rel = "noopener noreferrer"; }
+      cap.append(src);
+    }
+  }
+
+  /* ---------- Map in Drawer (offline Google Map + optional live iframe) ---------- */
+  let mapInPhotoSlot = false;
+  let lowerMapMissing = false;
+  // The lower map box is shown when the live map is open, or when the offline
+  // map exists and is not already displayed in the photo slot.
+  function syncLowerMap() {
+    const liveOpen = !$("#dMapFrame").hidden;
+    $("#dMapBox").hidden = !liveOpen && (mapInPhotoSlot || lowerMapMissing);
+    const btn = $("#dMapToggle");
+    if (!liveOpen) btn.textContent = (mapInPhotoSlot || lowerMapMissing) ? "Show live interactive map" : "Switch to live interactive map";
+  }
+  $("#dOfflineMap").addEventListener("error", () => { lowerMapMissing = true; syncLowerMap(); });
+  function renderDrawerMap(loc) {
+    const offlineImg = $("#dOfflineMap");
+    const coordsEl = $("#dMapCoords");
+    const frame = $("#dMapFrame");
+    const toggleBtn = $("#dMapToggle");
+    const tag = $("#dMapTag");
+    const offlineNote = $("#dOffline");
+
+    lowerMapMissing = false;
+    offlineImg.src = `images/maps/${loc.id}.jpg`;
+    offlineImg.alt = `Offline Google map centered on ${loc.title}`;
+    coordsEl.textContent = `${loc.lat.toFixed(4)}°N, ${loc.lng.toFixed(4)}°E`;
+
+    frame.replaceChildren();
+    frame.hidden = true;
+    offlineImg.hidden = false;
+    coordsEl.hidden = false;
+    tag.hidden = false;
+    offlineNote.hidden = true;
+    toggleBtn.setAttribute("aria-expanded", "false");
+    toggleBtn.textContent = "Switch to live interactive map";
+    syncLowerMap();
+  }
+
+  $("#dMapToggle").addEventListener("click", () => {
+    const loc = byId.get(state.activeId);
+    const frame = $("#dMapFrame");
+    const offlineImg = $("#dOfflineMap");
+    const coordsEl = $("#dMapCoords");
+    const tag = $("#dMapTag");
+    const toggleBtn = $("#dMapToggle");
+    const offlineNote = $("#dOffline");
+    if (!loc) return;
+
+    if (!frame.hidden) {
+      // Revert to offline Google map
+      frame.replaceChildren();
+      frame.hidden = true;
+      offlineImg.hidden = false;
+      coordsEl.hidden = false;
+      tag.hidden = false;
+      offlineNote.hidden = true;
+      toggleBtn.setAttribute("aria-expanded", "false");
+      toggleBtn.textContent = "Switch to live interactive map";
+      syncLowerMap();
+      return;
+    }
+
+    if (!navigator.onLine) {
+      offlineNote.hidden = false;
+      toast("Live map requires internet. Showing offline Google map.");
+      return;
+    }
+
+    offlineNote.hidden = true;
+    const iframe = document.createElement("iframe");
+    iframe.title = `Google map of ${loc.title}`;
+    iframe.loading = "lazy";
+    iframe.referrerPolicy = "no-referrer-when-downgrade";
+    iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox");
+    iframe.src = "https://maps.google.com/maps?q=" + encodeURIComponent(loc.query) + "&z=17&output=embed";
+    frame.replaceChildren(iframe);
+    frame.hidden = false;
+    $("#dMapBox").hidden = false;
+    offlineImg.hidden = true;
+    coordsEl.hidden = true;
+    tag.hidden = true;
+    toggleBtn.setAttribute("aria-expanded", "true");
+    toggleBtn.textContent = mapInPhotoSlot ? "Hide live map" : "Show offline Google map";
+    requestAnimationFrame(() => frame.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+  });
+
+  function openDetail(id, { focus }) {
+    const loc = byId.get(id);
+    if (!loc) return;
+    if (state.activeId) pinEls.get(state.activeId)?.classList.remove("active");
+    state.activeId = id;
+    pinEls.get(id)?.classList.add("active");
+
+    const badge = $("#dBadge");
+    badge.textContent = loc.category; catVars(badge, loc.category);
+    $("#dTitle").textContent = loc.title;
+    $("#dDesc").textContent = loc.description;
+    $("#dHours").textContent = loc.mapKey ? `Map marker ${loc.mapKey} · Check opening hours at gardensbythebay.com.sg` : "Check opening hours at gardensbythebay.com.sg";
+    $("#dMaps").href = loc.mapsUrl;
+    $("#dSatellite").href = satelliteMapUrl(loc.lat, loc.lng);
+    $("#dGooglePhotos").href = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(loc.query);
+    $("#dQr").setAttribute("aria-label", `QR code for directions to ${loc.title}`);
+    renderQr(loc.mapsUrl);
+    renderPhoto(loc);
+    renderDrawerMap(loc);
+
+    if (!dialog.open) dialog.showModal();
+    $("#drawerInner").scrollTop = 0;
+    history.replaceState(null, "", "#" + id);
+    app.classList.remove("list-open");
+    $("#listToggle").setAttribute("aria-expanded", "false");
+    if (focus) requestAnimationFrame(() => focusOn(loc));
+  }
+
+  function closeDetail() { if (dialog.open) dialog.close(); }
+  dialog.addEventListener("close", () => {
+    if (state.activeId) pinEls.get(state.activeId)?.classList.remove("active");
+    state.activeId = null;
+    history.replaceState(null, "", location.pathname + location.search);
+  });
+  $("#dClose").addEventListener("click", closeDetail);
+  // Backdrop click: the dialog element itself is only hit outside .drawer-inner.
+  dialog.addEventListener("click", (e) => { if (e.target === dialog) closeDetail(); });
+
+  $("#dDownload").addEventListener("click", () => {
+    const c = $("#dQr canvas");
+    const loc = byId.get(state.activeId);
+    if (!c || !loc) return toast("QR code not available");
+    const a = document.createElement("a");
+    a.href = c.toDataURL("image/png"); a.download = `${loc.id}-qr.png`; a.click();
+  });
+  $("#dShare").addEventListener("click", async () => {
+    const loc = byId.get(state.activeId);
+    if (!loc) return;
+    try { await navigator.clipboard.writeText(loc.mapsUrl); toast("Google Maps link copied"); }
+    catch { toast("Couldn't copy — use Open in Google Maps"); }
+  });
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+
+  /* ---------- Search wiring ---------- */
+  searchEl.addEventListener("input", () => {
+    state.query = searchEl.value.trim().toLowerCase().slice(0, 60);
+    $("#searchWrap").classList.toggle("has-value", !!searchEl.value);
+    if (state.query) { app.classList.add("list-open"); $("#listToggle").setAttribute("aria-expanded", "true"); }
+    update();
+  });
+  searchEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { const first = locations.find(matches); if (first) openDetail(first.id, { focus: true }); }
+  });
+  $("#clearSearch").addEventListener("click", () => {
+    searchEl.value = ""; searchEl.dispatchEvent(new Event("input")); searchEl.focus();
+  });
+  $("#listToggle").addEventListener("click", () => {
+    const open = app.classList.toggle("list-open");
+    $("#listToggle").setAttribute("aria-expanded", String(open));
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "/" && document.activeElement !== searchEl && !dialog.open) { e.preventDefault(); searchEl.focus(); }
+  });
+
+  /* ---------- Boot ---------- */
+  function boot() {
+    renderPins();
+    renderChips();
+    update();
+    initPanzoom();
+    document.querySelectorAll(".layer-btn").forEach((btn) => {
+      btn.addEventListener("click", () => setLayer(btn.dataset.layer));
+    });
+    const hashId = decodeURIComponent(location.hash.slice(1));
+    if (byId.has(hashId)) openDetail(hashId, { focus: true });
+  }
+  // Scripts are deferred; DOMContentLoaded fires after they run.
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+</body>
+</html>
